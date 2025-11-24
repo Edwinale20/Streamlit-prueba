@@ -1,62 +1,73 @@
 import streamlit as st
+import msal
 import requests
-import io
 import pandas as pd
+import io
 
-# ---------- Config desde secrets ----------
+st.title("Conexión OneDrive Empresarial vía Microsoft Graph (Delegated OAuth)")
 
 TENANT_ID = st.secrets["azure"]["tenant_id"]
 CLIENT_ID = st.secrets["azure"]["client_id"]
 CLIENT_SECRET = st.secrets["azure"]["client_secret"]
+REDIRECT_URI = st.secrets["azure"]["redirect_uri"]
 
-USER_ID = st.secrets["onedrive"]["user_id"]
-CARPETA = st.secrets["onedrive"]["carpeta"]
-ARCHIVO = st.secrets["onedrive"]["archivo"]
+AUTHORITY = f"https://login.microsoftonline.com/{TENANT_ID}"
 
-# ---------- Función para obtener token (client_credentials) ----------
+# Permisos delegados (NO requieren admin consent)
+SCOPES = ["User.Read", "Files.Read"]
 
-def get_access_token():
-    token_url = f"https://login.microsoftonline.com/{TENANT_ID}/oauth2/v2.0/token"
+# Inicializar estado
+if "token" not in st.session_state:
+    st.session_state["token"] = None
 
-    data = {
-        "client_id": CLIENT_ID,
-        "client_secret": CLIENT_SECRET,
-        "grant_type": "client_credentials",
-        "scope": "https://graph.microsoft.com/.default",  # usa los permisos que ya aprobó el admin
-    }
+# Crear la URL de autenticación
+def get_auth_url():
+    app = msal.ConfidentialClientApplication(
+        CLIENT_ID, authority=AUTHORITY, client_credential=CLIENT_SECRET
+    )
+    return app.get_authorization_request_url(SCOPES, redirect_uri=REDIRECT_URI)
 
-    resp = requests.post(token_url, data=data)
-    resp.raise_for_status()
-    return resp.json()["access_token"]
-
-# ---------- Función para descargar el archivo de OneDrive ----------
-
-def leer_excel_onedrive():
-    access_token = get_access_token()
-
-    # Ruta al archivo en OneDrive del usuario (business)
-    # Graph: /users/{user-id}/drive/root:/Carpeta/archivo:/content  :contentReference[oaicite:7]{index=7}
-    file_path = f"/{CARPETA}/{ARCHIVO}"
-    graph_url = (
-        f"https://graph.microsoft.com/v1.0/users/{USER_ID}"
-        f"/drive/root:{file_path}:/content"
+# Intercambiar código por token
+def exchange_code_for_token(code):
+    app = msal.ConfidentialClientApplication(
+        CLIENT_ID, authority=AUTHORITY, client_credential=CLIENT_SECRET
+    )
+    return app.acquire_token_by_authorization_code(
+        code,
+        SCOPES,
+        redirect_uri=REDIRECT_URI
     )
 
+# Obtener parámetros de la URL
+params = st.experimental_get_query_params()
+
+# Si viene code, intercambiar por token
+if "code" in params and st.session_state["token"] is None:
+    code = params["code"][0]
+    token_data = exchange_code_for_token(code)
+    st.session_state["token"] = token_data
+
+# Si no hay token → mostrar botón de inicio de sesión
+if st.session_state["token"] is None:
+    auth_url = get_auth_url()
+    st.markdown(f"[Iniciar sesión con Microsoft]({auth_url})")
+else:
+    st.success("Autenticado con Microsoft Graph correctamente.")
+    access_token = st.session_state["token"]["access_token"]
+
     headers = {"Authorization": f"Bearer {access_token}"}
-    resp = requests.get(graph_url, headers=headers)
-    resp.raise_for_status()
 
-    return pd.read_excel(io.BytesIO(resp.content))
+    # Cambia esto por el archivo que quieras leer
+    file_path = "/PruebasStreamlit/datos_prueba.xlsx"
 
-# ---------- Streamlit UI ----------
+    url = f"https://graph.microsoft.com/v1.0/me/drive/root:{file_path}:/content"
 
-st.title("Prueba OneDrive 365 + Streamlit")
+    st.write("Obteniendo archivo desde OneDrive de empresa...")
 
-st.write("Leyendo archivo desde OneDrive for Business…")
+    r = requests.get(url, headers=headers)
 
-try:
-    df = leer_excel_onedrive()
-    st.success("Archivo leído correctamente desde OneDrive ✅")
-    st.dataframe(df)
-except Exception as e:
-    st.error(f"Error al leer el archivo: {e}")
+    if r.status_code == 200:
+        df = pd.read_excel(io.BytesIO(r.content))
+        st.dataframe(df)
+    else:
+        st.error(f"Error {r.status_code}: {r.text}")
