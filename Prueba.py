@@ -3,7 +3,7 @@ import msal
 import requests
 import pandas as pd
 import io
-
+  
 st.title("Conexión OneDrive Empresarial vía Microsoft Graph (Delegated OAuth)")
 
 TENANT_ID = st.secrets["azure"]["tenant_id"]
