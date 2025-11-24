@@ -8,7 +8,7 @@ CLIENT_ID = st.secrets["onedrive"]["client_id"]
 CLIENT_SECRET = st.secrets["onedrive"]["client_secret"]
 REFRESH_TOKEN = st.secrets["onedrive"]["refresh_token"]
 REDIRECT_URI = st.secrets["onedrive"]["redirect_uri"]
-   
+      
 # ==========================
 # 2. Función – obtener access_token desde refresh_token
 # ==========================
