@@ -33,7 +33,7 @@ def get_access_token():
         return None
     
     return r.json()["access_token"]
-
+  
 # ==========================
 # 3. Listar archivos de carpeta "Cobertura"
 # ==========================
